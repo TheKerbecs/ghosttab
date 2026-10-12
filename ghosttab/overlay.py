@@ -88,10 +88,9 @@ def _tokens(text: str) -> list[str]:
 
 
 class Overlay:
-    def __init__(self, root: tk.Tk, text_color: str, keycap_color: str):
+    def __init__(self, root: tk.Tk, text_color: str):
         self.root = root
         self.text_color = text_color
-        self.keycap_color = keycap_color
         self.key = FALLBACK_KEY
         root.overrideredirect(True)
         root.attributes("-topmost", True)
@@ -155,8 +154,9 @@ class Overlay:
         kh = self.key_font.metrics("linespace") + 2
         ky = (len(lines) - 1) * line_h + (line_h - kh) // 2
         kw = keycap_w - 6
-        c.create_rectangle(last_x, ky, last_x + kw, ky + kh, fill="#2b2b2b", outline="#3c3c3c")
-        c.create_text(last_x + kw // 2, ky + kh // 2, text="Tab", font=self.key_font, fill=self.keycap_color)
+        # Outline only, in the ghost-text colour, so it suits light and dark fields alike.
+        c.create_rectangle(last_x, ky, last_x + kw, ky + kh, outline=self.text_color, width=1)
+        c.create_text(last_x + kw // 2, ky + kh // 2, text="Tab", font=self.key_font, fill=self.text_color)
 
         w = max(right - left, last_x + kw + 2)
         h = len(lines) * line_h + 2

@@ -52,14 +52,13 @@ class Config:
     # Selection assistant.
     assistant: bool = True
     assistant_hotkey: str = "ctrl+alt+a"
-    assistant_selection_dot: bool = True
+    assistant_selection_button: bool = True
     suggestion_chaining: bool = True
     swallow_tab_while_generating: bool = True
     personalization: list[str] = field(default_factory=list)
     ignored_apps: list[str] = field(default_factory=list)
     blocked_exes: list[str] = field(default_factory=lambda: list(DEFAULT_BLOCKED_EXES))
     text_color: str = "#8c8c8c"
-    keycap_color: str = "#6f6f6f"
     debug: bool = False
 
     @classmethod

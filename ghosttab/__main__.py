@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
 
     win32.enable_dpi_awareness()
     root = tk.Tk()
-    overlay = Overlay(root, cfg.text_color, cfg.keycap_color)
+    overlay = Overlay(root, cfg.text_color)
 
     ui_queue: queue.Queue = queue.Queue()
 

@@ -245,18 +245,33 @@ class QuickAction:
     instruction: str
 
 
-QUICK_ACTIONS = [
-    QuickAction("Improve", "Improve the writing: clearer and more natural, same meaning and language."),
-    QuickAction("Fix", "Fix spelling, grammar and punctuation. Change nothing else."),
-    QuickAction("Shorter", "Make it shorter and more concise, keeping the key information."),
-    QuickAction("Formal", "Rewrite it in a more formal, professional tone."),
-    QuickAction("Casual", "Rewrite it in a more casual, friendly tone."),
-    QuickAction("English", "Translate it into English."),
-    QuickAction("German", "Translate it into German."),
-    QuickAction("Explain", "Question about the text (do not rewrite it): what does it mean and what is "
-                "the writer asking for? Answer in two short sentences, in the language of the text."),
-    QuickAction("Summarize", "Summarize it in two or three sentences."),
-]
+IMPROVE = QuickAction("Improve", "Improve the writing: clearer and more natural, same meaning and language.")
+FIX = QuickAction("Fix", "Fix spelling, grammar and punctuation. Change nothing else.")
+SHORTER = QuickAction("Shorter", "Make it shorter and more concise, keeping the key information.")
+FORMAL = QuickAction("Formal", "Rewrite it in a more formal, professional tone.")
+CASUAL = QuickAction("Casual", "Rewrite it in a more casual, friendly tone.")
+TO_ENGLISH = QuickAction("To English", "Translate it into English.")
+TO_GERMAN = QuickAction("To German", "Translate it into German.")
+EXPLAIN = QuickAction("Explain", "Question about the text (do not rewrite it): what does it mean and what is "
+                      "the writer asking for? Answer in two short sentences, in the language of the text.")
+SUMMARIZE = QuickAction("Summarize", "Summarize it in two or three sentences.")
+QUICK_ACTIONS = [IMPROVE, FIX, SHORTER, FORMAL, CASUAL, TO_ENGLISH, TO_GERMAN, EXPLAIN, SUMMARIZE]
+
+_GERMAN_WORDS = re.compile(
+    r"\b(der|die|das|und|ich|nicht|ist|wir|sie|ein|eine|mit|auf|f\u00fcr|zu|von|haben|wird|auch|bitte|danke)\b",
+    re.I)
+
+
+def looks_german(text: str) -> bool:
+    words = len(_GERMAN_WORDS.findall(text))
+    return words >= 2 or (words >= 1 and re.search("[\u00e4\u00f6\u00fc\u00df]", text, re.I) is not None)
+
+
+def panel_actions(text: str) -> tuple[list[QuickAction], list[QuickAction]]:
+    """Primary and secondary actions for a selection; translation goes to the
+    other of English and German."""
+    translate, other = (TO_ENGLISH, TO_GERMAN) if looks_german(text) else (TO_GERMAN, TO_ENGLISH)
+    return [IMPROVE, FIX, SHORTER, FORMAL, translate], [CASUAL, EXPLAIN, SUMMARIZE, other]
 
 
 def build_assistant_messages(selection: str, instruction: str, app: str) -> list[dict]:

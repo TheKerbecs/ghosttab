@@ -308,7 +308,7 @@ def run_assistant(d: Driver, tag: str):
     d.check("Ctrl+Enter replaces the selection", bool(inserted) and "buyed" not in final and "bought" in final,
             repr(final))
 
-    # Mouse selection: double-click a word, click the dot, the panel opens.
+    # Mouse selection: double-click a word, click the button, the panel opens.
     doc = uia.GetFocusedControl().GetPattern(uia.PatternId.TextPattern)
     rng = doc.DocumentRange.FindText("store", False, False) if doc else None
     rects = rng.GetBoundingRectangles() if rng else []
@@ -319,18 +319,19 @@ def run_assistant(d: Driver, tag: str):
     x, y = rc.left + rc.width() // 2, rc.top + rc.height() // 2
     d.new_log()
     d.click(x, y, double=True)
-    dot = d.wait_log("assistant: selection dot", timeout=3)
-    d.check("double-click selection shows the dot", bool(dot), dot.split("assistant: ")[-1] if dot else "")
+    dot = d.wait_log("assistant: selection button", timeout=3)
+    d.check("double-click selection shows the button", bool(dot), dot.split("assistant: ")[-1] if dot else "")
     if not dot:
         return
     time.sleep(0.2)
-    print("   screenshot:", d.shot(f"{tag}-3-dot"))
-    user32.SetCursorPos(x + 12 + 8, y + 10 + 8)
+    print("   screenshot:", d.shot(f"{tag}-3-button"))
+    # The button sits just after the end of the selection (24 px square, 6 px gap).
+    user32.SetCursorPos(rc.right + 6 + 12, rc.top + rc.height() // 2)
     time.sleep(0.05)
     user32.mouse_event(0x0002, 0, 0, 0, 0)
     user32.mouse_event(0x0004, 0, 0, 0, 0)
     opened = d.wait_log("assistant: opened", timeout=5)
-    d.check("clicking the dot opens the panel", bool(opened) and "with 5 chars" in opened,
+    d.check("clicking the button opens the panel", bool(opened) and "with 5 chars" in opened,
             opened.split("assistant: ")[-1] if opened else "")
     time.sleep(0.4)
     d.combo(VK_ESCAPE, window=user32.GetForegroundWindow())
@@ -422,11 +423,13 @@ def main():
     ap.add_argument("--log", type=Path, required=True)
     ap.add_argument("--target", choices=["richedit", "chromium", "chat", "german", "assistant", "dictation"], default="richedit")
     ap.add_argument("--shots", type=Path, default=Path(tempfile.gettempdir()))
+    ap.add_argument("--no-idle-check", action="store_true",
+                    help="for chained runs: the previous run's own typing counts as activity")
     args = ap.parse_args()
     win32.enable_dpi_awareness()
     args.shots.mkdir(parents=True, exist_ok=True)
     idle = seconds_since_input()
-    if idle < 15:
+    if idle < 15 and not args.no_idle_check:
         print(f"someone is using this PC (last input {idle:.1f}s ago); not taking focus. Rerun when idle.")
         return 4
     profile = None

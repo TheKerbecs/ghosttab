@@ -29,20 +29,24 @@ the field (in a chat app, the conversation) is used as context.
 
 ### Dictation
 
-Press `Ctrl+Alt+Space` and speak. Recording stops when you press the hotkey
-again or pause for 1.5 s; `Esc` cancels. The model transcribes the audio
-itself, a second pass removes filler words, applies self-corrections ("at ten,
-actually no, nine" becomes "at 9") and spoken punctuation, and the text is
-typed at the cursor. If focus moved in the meantime, it goes to the clipboard.
+Press `Ctrl+Alt+Space` and speak. A small pill under the cursor shows the
+microphone level. Recording stops when you press the hotkey again or pause for
+1.5 s; `Esc` cancels. The model transcribes the audio itself, a second pass
+removes filler words, applies self-corrections ("at ten, actually no, nine"
+becomes "at 9") and spoken punctuation, and the text is typed at the cursor. If
+focus moved in the meantime, it goes to the clipboard.
 
 ### Selection assistant
 
-Select text anywhere and press `Ctrl+Alt+A`, or click the dot that appears next
-to a mouse selection. A panel offers quick actions (`Ctrl+1` to `Ctrl+9`:
-improve, fix, shorter, formal, casual, English, German, explain, summarize) or
-a free-form request. The answer streams in; `Ctrl+Enter` replaces the selection
-(when it is editable), `Ctrl+Shift+C` copies, `Esc` closes. With nothing
-selected, the answer is inserted at the cursor.
+Select text anywhere and press `Ctrl+Alt+A`, or click the small sparkle button
+that appears at the end of a mouse selection. A compact popover opens with a
+request box and the most common actions: improve, fix, shorter, formal and a
+translation (to English for German text, to German otherwise). `...` reveals
+casual, explain, summarize and the other translation; `Ctrl+1` to `Ctrl+9` run
+them from the keyboard. The answer streams in; further requests refine it.
+`Ctrl+Enter` replaces the selection (when it is editable), `Ctrl+Shift+C`
+copies, `Esc` or clicking elsewhere closes. With nothing selected, the answer
+is inserted at the cursor.
 
 All three work in the language you write or speak, as far as the model knows
 it. German is tested, including umlauts, `ß`, German quotation marks and AltGr
@@ -114,9 +118,9 @@ Copy `ghosttab.example.json` to `ghosttab.json`. All keys are listed in
 | `dictation_silence_ms`    | 1500               | stop after this long without speech; 0 = only by hotkey |
 | `assistant`               | true               | enable the selection assistant                  |
 | `assistant_hotkey`        | `ctrl+alt+a`       | open the assistant                              |
-| `assistant_selection_dot` | true               | show the dot after mouse selections             |
+| `assistant_selection_button` | true           | show the button after mouse selections          |
 
-Autocomplete and the selection dot never run in password fields, terminals,
+Autocomplete and the selection button never run in password fields, terminals,
 IDEs, Explorer, the Start menu, Settings, UAC and credential prompts, or
 password managers.
 
@@ -125,7 +129,7 @@ password managers.
 ```
 keyboard --(WH_KEYBOARD_LL)--> hotkeys (dictation, assistant), then autocomplete:
                                classify key; swallow Tab only while a suggestion is shown
-mouse    --(WH_MOUSE_LL)-----> selection dot after a drag or double-click
+mouse    --(WH_MOUSE_LL)-----> selection button after a drag or double-click
                                    |
                                    v
             UI Automation: focused field, text around the caret, selection,
@@ -198,6 +202,10 @@ Measured on an RTX 4070 with Gemma 4 E2B Q4_K_M:
 (generated with Windows text-to-speech, English and German), every assistant
 action on English and German text, and checks that the autocomplete cache
 survives an assistant request.
+
+`tests/ui_preview.py` renders every popup in each state (suggestion, dictation
+pill, selection button, assistant popover) into one contact sheet, without
+taking focus.
 
 `tests/uia_probe.py` checks the UI Automation reader against a RichEdit window
 (`--edit` for a classic EDIT control).

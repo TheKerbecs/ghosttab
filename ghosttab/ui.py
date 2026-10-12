@@ -1,10 +1,11 @@
 """Shared Tk helpers: windows that float above other apps without taking focus,
-and the colours used by every ghosttab window."""
+Windows 11 rounded corners, tooltips, and the look shared by every window."""
 
 from __future__ import annotations
 
 import ctypes
 import tkinter as tk
+from tkinter import font as tkfont
 
 user32 = ctypes.windll.user32
 GWL_EXSTYLE = -20
@@ -13,6 +14,8 @@ WS_EX_TOPMOST, WS_EX_NOACTIVATE = 0x8, 0x08000000
 SW_HIDE, SW_SHOWNOACTIVATE = 0, 4
 HWND_TOPMOST = -1
 SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOMOVE = 0x10, 0x1, 0x2
+DWMWA_WINDOW_CORNER_PREFERENCE = 33
+DWMWCP_ROUND, DWMWCP_ROUNDSMALL = 2, 3
 
 user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
 user32.GetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int]
@@ -21,21 +24,52 @@ user32.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, 
                                 ctypes.c_int, ctypes.c_int, ctypes.c_uint]
 user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
 
-BG = "#1e1f22"
-BG_RAISED = "#2b2d31"
-BORDER = "#3f4147"
-FG = "#e3e5e8"
-FG_MUTED = "#949ba4"
-ACCENT = "#5b8def"
-RECORDING = "#e5484d"
-BUSY = "#f0a020"
-FONT = ("Segoe UI", 10)
-FONT_SMALL = ("Segoe UI", 9)
+# Windows 11 dark flyout palette.
+BG = "#2c2c2c"
+SURFACE = "#383838"
+SURFACE_HOVER = "#454545"
+BORDER = "#454545"
+FG = "#f3f3f3"
+FG_MUTED = "#a8a8a8"
+FG_FAINT = "#7a7a7a"
+ACCENT = "#4cc2ff"
+ACCENT_FG = "#1a1a1a"
+ACCENT_HOVER = "#62cbff"
+RECORDING = "#ff6b6b"
+
+_fonts: dict[str, tuple] = {}
+
+
+def font(size: int = 10, weight: str = "normal") -> tuple:
+    """Segoe UI Variable on Windows 11, Segoe UI elsewhere."""
+    if "family" not in _fonts:
+        families = set(tkfont.families())
+        _fonts["family"] = ("Segoe UI Variable Text",) if "Segoe UI Variable Text" in families else ("Segoe UI",)
+        _fonts["icons"] = ("Segoe Fluent Icons",) if "Segoe Fluent Icons" in families else ("Segoe MDL2 Assets",)
+    return (_fonts["family"][0], size, weight)
+
+
+def icon_font(size: int = 10) -> tuple:
+    font()
+    return (_fonts["icons"][0], size)
+
+
+ICON_MIC = "\ue720"
 
 
 def frame_hwnd(win: tk.Misc) -> int:
     win.update_idletasks()
     return int(win.wm_frame(), 16)
+
+
+def round_corners(hwnd: int, small: bool = False):
+    """Native Windows 11 rounded corners and shadow; ignored on Windows 10."""
+    value = ctypes.c_int(DWMWCP_ROUNDSMALL if small else DWMWCP_ROUND)
+    try:
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(ctypes.c_void_p(hwnd), DWMWA_WINDOW_CORNER_PREFERENCE,
+                                                   ctypes.byref(value), ctypes.sizeof(value))
+    except OSError:
+        pass
 
 
 def make_floating(win: tk.Toplevel | tk.Tk, click_through: bool) -> int:
@@ -96,3 +130,62 @@ def clamp_to_screen(win: tk.Misc, x: int, y: int, w: int, h: int, margin: int = 
     x = max(left + margin, min(x, right - w - margin))
     y = max(top + margin, min(y, bottom - h - margin))
     return x, y
+
+
+def place_near(win: tk.Misc, anchor_x: int, anchor_top: int, anchor_bottom: int, w: int, h: int,
+               gap: int = 6) -> tuple[int, int]:
+    """Below the anchor if it fits on screen, otherwise above it."""
+    left, top, right, bottom = screen_bounds(win, anchor_x, anchor_bottom)
+    y = anchor_bottom + gap
+    if y + h > bottom - 8 and anchor_top - gap - h >= top + 8:
+        y = anchor_top - gap - h
+    return clamp_to_screen(win, anchor_x, y, w, h)
+
+
+class Tooltip:
+    """A small hint shown after hovering a widget."""
+
+    def __init__(self, widget: tk.Widget, text: str, delay_ms: int = 450):
+        self.widget, self.text, self.delay_ms = widget, text, delay_ms
+        self._after = None
+        self.win = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._cancel, add="+")
+        widget.bind("<ButtonPress>", self._cancel, add="+")
+
+    def _schedule(self, _event=None):
+        self._cancel()
+        self._after = self.widget.after(self.delay_ms, self._show)
+
+    def _cancel(self, _event=None):
+        if self._after:
+            self.widget.after_cancel(self._after)
+            self._after = None
+        if self.win is not None:
+            self.win.destroy()
+            self.win = None
+
+    def _show(self):
+        self.win = tk.Toplevel(self.widget)
+        self.win.configure(bg=BORDER)
+        tk.Label(self.win, text=self.text, bg=BG, fg=FG, font=font(9), padx=8, pady=4).pack(padx=1, pady=1)
+        hwnd = make_floating(self.win, click_through=True)
+        round_corners(hwnd, small=True)
+        x = self.widget.winfo_rootx()
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        show_floating(self.win, hwnd, x, y)
+
+
+class Chip(tk.Label):
+    """A flat button: a label with hover feedback."""
+
+    def __init__(self, parent, text: str, command, accent: bool = False, **kw):
+        self.accent = accent
+        self.normal = ACCENT if accent else SURFACE
+        self.hover = ACCENT_HOVER if accent else SURFACE_HOVER
+        super().__init__(parent, text=text, bg=self.normal, fg=ACCENT_FG if accent else FG,
+                         font=font(9, "bold" if accent else "normal"), padx=10, pady=3, cursor="hand2", **kw)
+        self.command = command
+        self.bind("<Button-1>", lambda e: self.command())
+        self.bind("<Enter>", lambda e: self.configure(bg=self.hover))
+        self.bind("<Leave>", lambda e: self.configure(bg=self.normal))

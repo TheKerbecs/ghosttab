@@ -53,7 +53,8 @@ class FocusContext:
     line_left: int = 0     # x where wrapped text lines start inside the field
     editable: bool = True
     selection: str = ""
-    selection_rect: Rect | None = None
+    selection_rect: Rect | None = None      # first line of the selection
+    selection_end: Rect | None = None       # last line of the selection
     hwnd: int = 0          # foreground window the element belongs to
 
 
@@ -131,7 +132,7 @@ def read_control(ctrl: uia.Control, own_pid: int) -> FocusContext | None:
             editable = ctrl.ControlType in EDITABLE_TYPES and bool(ctrl.IsKeyboardFocusable)
 
         preceding = trailing = selection_text = ""
-        selection_rect = None
+        selection_rect = selection_end = None
         caret: tuple[Rect, bool] | None = None
         line_left = field.x + 4
         text_pattern = ctrl.GetPattern(uia.PatternId.TextPattern)
@@ -152,7 +153,7 @@ def read_control(ctrl: uia.Control, own_pid: int) -> FocusContext | None:
             if selection_text:
                 sel_rects = _rects(sel)
                 if sel_rects:
-                    selection_rect = sel_rects[0]
+                    selection_rect, selection_end = sel_rects[0], sel_rects[-1]
             caret = _caret_from_text(sel)
             line = sel.Clone()
             line.ExpandToEnclosingUnit(LINE)
@@ -183,7 +184,7 @@ def read_control(ctrl: uia.Control, own_pid: int) -> FocusContext | None:
             caret=caret[0], caret_exact=caret[1], field=field, is_password=is_password,
             line_left=line_left, editable=editable,
             selection=selection_text.replace("\r\n", "\n").replace("\r", "\n"),
-            selection_rect=selection_rect, hwnd=fg_hwnd,
+            selection_rect=selection_rect, selection_end=selection_end, hwnd=fg_hwnd,
         )
     except Exception as exc:  # COM errors when the element disappears mid-read
         log.debug("read_focus failed: %r", exc)
