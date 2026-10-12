@@ -15,6 +15,10 @@ While you type in any text field (browsers, Discord, Slack, Notepad, Office,
 
 `Tab` is only intercepted while a suggestion is visible.
 
+Suggestions follow the language you type in, as far as the model knows it.
+German is tested, including umlauts, `ß`, German quotation marks and AltGr
+characters.
+
 Nothing leaves the machine: the field contents and the visible text around it
 are sent only to the llama-server you run locally.
 
@@ -145,6 +149,7 @@ the test window loses focus.
 .\.venv\Scripts\python tests\live_drive.py --log ghosttab.log --target richedit
 .\.venv\Scripts\python tests\live_drive.py --log ghosttab.log --target chromium
 .\.venv\Scripts\python tests\live_drive.py --log ghosttab.log --target chat
+.\.venv\Scripts\python tests\live_drive.py --log ghosttab.log --target german
 ```
 
 The browser targets use Brave with a temporary profile that is deleted

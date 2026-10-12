@@ -50,6 +50,10 @@ def classify_key(vk: int, shift: bool, ctrl: bool, alt: bool, win: bool) -> str:
         return "other"
     if vk in NAV_KEYS:
         return "navigation"
+    if ctrl and alt and not win:
+        # AltGr arrives as Ctrl+Alt; on German and other layouts it types
+        # characters such as @, euro sign, braces and backslash.
+        return "mutation"
     if vk in DISMISS_KEYS or ctrl or alt or win:
         return "dismissal"
     return "mutation"

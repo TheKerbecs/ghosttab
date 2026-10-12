@@ -1,7 +1,7 @@
 """Live end-to-end driver: types into a real window like a person and checks
 what ghosttab does.
 
-    python tests/live_drive.py --log ghosttab.log --target richedit|chromium|chat [--shots DIR]
+    python tests/live_drive.py --log ghosttab.log --target richedit|chromium|chat|german [--shots DIR]
 
 ghosttab must already be running with --debug and its output in --log.
 Every keystroke is preceded by a check that the target window is still in
@@ -247,8 +247,13 @@ def run_chat(d: Driver, tag: str):
     print(f"   (is the suggestion on topic? {s!r})")
 
 
-def run(d: Driver, tag: str):
-    draft = "Hi Sarah, thanks for sending over the contract. I had a chance to review it and"
+ENGLISH = ("Hi Sarah, thanks for sending over the contract. I had a chance to review it and", " Could we")
+GERMAN = ("Hallo J\u00fcrgen, danke f\u00fcr die schnelle R\u00fcckmeldung. Ich habe mir den Vertrag "
+          "angesehen und", " K\u00f6nnen wir")
+
+
+def run(d: Driver, tag: str, texts=ENGLISH):
+    draft, follow_up = texts
     d.type(draft)
     line = d.wait_log("suggest [")
     s1 = suggestion_of(line)
@@ -267,7 +272,7 @@ def run(d: Driver, tag: str):
     # Shift+Tab: one word
     d.press(VK_ESCAPE)  # dismiss any chained suggestion
     time.sleep(0.2)
-    d.type(" Could we")
+    d.type(follow_up)
     line = d.wait_log("suggest [")
     s2 = suggestion_of(line)
     d.check("second suggestion appears", s2 is not None, repr(s2))
@@ -310,7 +315,7 @@ def run(d: Driver, tag: str):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--log", type=Path, required=True)
-    ap.add_argument("--target", choices=["richedit", "chromium", "chat"], default="richedit")
+    ap.add_argument("--target", choices=["richedit", "chromium", "chat", "german"], default="richedit")
     ap.add_argument("--shots", type=Path, default=Path(tempfile.gettempdir()))
     args = ap.parse_args()
     win32.enable_dpi_awareness()
@@ -331,7 +336,12 @@ def main():
         with uia.UIAutomationInitializerInThread():
             d = Driver(hwnd, args.log, args.shots)
             try:
-                (run_chat if args.target == "chat" else run)(d, args.target)
+                if args.target == "chat":
+                    run_chat(d, args.target)
+                elif args.target == "german":
+                    run(d, args.target, GERMAN)
+                else:
+                    run(d, args.target)
             except Abort as e:
                 print("ABORTED:", e)
                 return 3

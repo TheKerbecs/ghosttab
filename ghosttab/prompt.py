@@ -12,6 +12,8 @@ SYSTEM_PROMPT = (
     "first person; you are completing their words, not replying to them. "
     "Output only the continuation: no quotes, no commentary, no greetings, "
     "no refusals. Do not begin a new sentence after the current one ends. "
+    "Always write in the language the user is writing in, with its correct "
+    "spelling and special characters (for German: \u00e4, \u00f6, \u00fc, \u00df). "
     "If the text already looks complete, output nothing."
 )
 
@@ -73,11 +75,22 @@ def build_messages(inp: PromptInput, personalization: list[str], trailing_budget
 MIN_LENGTH = 2
 # <|im_end|>, Gemma 4's <|turn> / <turn|> / <|think|>, Gemma 3's <end_of_turn>, </s>
 _SPECIAL_TOKEN = re.compile(r"<\|[^<>\s]*>|<[^<>\s]*\|>|<(?:end_of_turn|start_of_turn|eos|/s)>")
-_SMART = str.maketrans({
+_PLAIN = {
     "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u2032": "'",
     "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u2033": '"',
-    "\u2013": "-", "\u00a0": " ",
-})
+    "\u2013": "-", "\u2014": "--", "\u2026": "...", "\u00a0": " ",
+}
+# Typographic characters are kept when the user's own text already uses the
+# same family (German quotes from autocorrect, for example).
+_FAMILIES = ["\u2018\u2019\u201a", "\u201c\u201d\u201e", "\u2013\u2014", "\u2026"]
+
+
+def _plain_punctuation(text: str, preceding: str) -> str:
+    keep = set()
+    for family in _FAMILIES:
+        if any(c in preceding for c in family):
+            keep.update(family)
+    return "".join(c if c in keep else _PLAIN.get(c, c) for c in text)
 
 
 def _remove_context_echo(text: str, preceding: str) -> str:
@@ -136,7 +149,7 @@ def normalize(raw: str, preceding: str, trailing: str = "") -> str | None:
     text = re.sub(r"\n?```$", "", text)
     text = _SPECIAL_TOKEN.split(text, maxsplit=1)[0]
     text = text.split("\n", 1)[0]  # typing path is single-line (stop: ["\n"])
-    text = text.translate(_SMART).replace("\u2014", "--").replace("\u2026", "...")
+    text = _plain_punctuation(text, preceding)
     if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
         text = text[1:-1]
     text = _truncate_internal_repetition(text)

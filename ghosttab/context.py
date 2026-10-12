@@ -86,9 +86,12 @@ def collect_snippets() -> list[Snippet]:
 
 _NOISE = [
     re.compile(r"\b(?:Today|Yesterday) at \d{1,2}:\d{2}(?:\s?[AP]M)?\b", re.I),
+    re.compile(r"\b(?:Heute|Gestern) um \d{1,2}:\d{2}(?: Uhr)?", re.I),
     re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4},? \d{1,2}:\d{2}(?:\s?[AP]M)?\b", re.I),
-    re.compile(r"(?<![\w:])\d{1,2}:\d{2}(?:\s?[AP]M)?\b\.?", re.I),
+    re.compile(r"\b\d{1,2}\.\d{1,2}\.\d{2,4},? \d{1,2}:\d{2}(?: Uhr)?", re.I),
+    re.compile(r"(?<![\w:])\d{1,2}:\d{2}(?:\s?[AP]M| Uhr)?\b\.?", re.I),
     re.compile(r"\b\d+\s(?:reactions?|links?|attachments?|replies|files?)\b,?\s?", re.I),
+    re.compile(r"\b\d+\s(?:Reaktion(?:en)?|Antworten|Anh\u00e4nge?|Dateien)\b,?\s?", re.I),
     re.compile(r"Shift \+ (?:Return|Enter) to add a new line\.?", re.I),
 ]
 

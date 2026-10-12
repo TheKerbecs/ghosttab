@@ -122,14 +122,16 @@ class LlamaClient:
             f"{self.base_url}/completion", json=body, stream=True, timeout=self.timeout_s
         ) as r:
             r.raise_for_status()
-            for line in r.iter_lines(decode_unicode=True):
+            # Decode bytes as UTF-8 ourselves: the event stream carries no
+            # charset, and requests would fall back to ISO-8859-1.
+            for raw_line in r.iter_lines():
                 if cancel.is_set():
                     # Leaving the with-block closes the socket; llama-server
                     # notices the disconnect and frees the slot.
                     raise Cancelled
-                if not line or not line.startswith("data: "):
+                if not raw_line.startswith(b"data: "):
                     continue
-                chunk = json.loads(line[6:])
+                chunk = json.loads(raw_line[6:].decode("utf-8"))
                 out.append(chunk.get("content", ""))
                 if chunk.get("stop"):
                     timings = chunk.get("timings") or {}
