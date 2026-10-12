@@ -62,21 +62,37 @@ characters.
   `start-server.ps1` uses a build unpacked under `vendor\llama-b*\` if present,
   otherwise `llama-server` from `PATH`.
 
-## Setup
+## Install
+
+Optionally unpack a pinned llama.cpp build (Vulkan, CUDA, ... from
+https://github.com/ggml-org/llama.cpp/releases) to `vendor\llama-<tag>\`, then:
+
+```powershell
+.\install.ps1
+```
+
+This creates the virtual environment, adds ghosttab to the Startup folder so it
+runs at every login, and starts it now. It runs in the background without a
+window: llama-server first (the first start downloads the model), then ghosttab.
+Logs are in `%LOCALAPPDATA%\ghosttab`; they record events and timings, not what
+you type or say.
+
+```powershell
+.\ghosttab.ps1 -Stop     # stop ghosttab and its llama-server
+.\ghosttab.ps1           # start again
+.\uninstall.ps1          # stop and remove from the Startup folder
+```
+
+ghosttab runs with normal user rights, so Windows does not let it see input in
+apps running as administrator.
+
+## Running from a terminal
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\pip install -r requirements.txt
-
-# Optional: a pinned llama.cpp build (Vulkan shown; pick the archive for your GPU)
-# from https://github.com/ggml-org/llama.cpp/releases, unpacked to vendor\llama-<tag>\
-```
-
-## Usage
-
-```powershell
-.\start-server.ps1                     # terminal 1: downloads the model on first run
-.\.venv\Scripts\python -m ghosttab     # terminal 2; add --debug for a trace
+.\start-server.ps1                     # terminal 1
+.\.venv\Scripts\python -m ghosttab     # terminal 2; --debug also logs typed and dictated text
 ```
 
 The default model is `unsloth/gemma-4-E2B-it-GGUF:Q4_K_M` (about 3 GB) plus its

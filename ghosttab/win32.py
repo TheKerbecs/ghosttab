@@ -426,3 +426,16 @@ class MouseHook:
     def stop(self):
         if self._thread_id:
             user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
+
+
+kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+kernel32.CreateMutexW.restype = wintypes.HANDLE
+ERROR_ALREADY_EXISTS = 183
+_instance_mutex = None
+
+
+def single_instance(name: str) -> bool:
+    """Hold a named mutex for the life of the process; False if another holds it."""
+    global _instance_mutex
+    _instance_mutex = kernel32.CreateMutexW(None, False, name)
+    return ctypes.get_last_error() != ERROR_ALREADY_EXISTS

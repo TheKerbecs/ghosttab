@@ -481,7 +481,7 @@ class Assistant:
         self.answer, self.answer_done = "", False
         self.panel.start_answer()
         messages = build_assistant_messages(source, instruction, self.ctx.app if self.ctx else "")
-        log.info("assistant: %s", instruction)
+        log.debug("assistant: request %r", instruction)
 
         def work():
             t0 = time.perf_counter()

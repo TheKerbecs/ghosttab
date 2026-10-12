@@ -267,7 +267,7 @@ class Engine:
         self._set_state("ready")
         self._show(text, now)
         self.poll_at = time.monotonic() + self.cfg.poll_ms / 1000
-        log.info("suggest [%s] %r", now.app, text)
+        log.debug("suggest [%s] %r", now.app, text)
 
     def _typeahead_check(self):
         if self.state != "checking" or self.ctx is None:
@@ -316,7 +316,7 @@ class Engine:
             chunk, rest = next_word(self.remaining)
         win32.send_text(chunk)
         self.ctx.preceding += chunk
-        log.info("accepted %r", chunk)
+        log.debug("accepted %r", chunk)
         if rest.strip():
             self.remaining = rest
             self.ui_post(lambda r=rest: self.overlay.update_text(r))

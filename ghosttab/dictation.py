@@ -224,7 +224,8 @@ class Dictation:
         t0 = time.perf_counter()
         transcript = self.client.transcribe(wav)
         t1 = time.perf_counter()
-        log.info("dictation: transcript %r (%.0f ms)", transcript, (t1 - t0) * 1000)
+        log.info("dictation: transcribed %d chars in %.0f ms", len(transcript), (t1 - t0) * 1000)
+        log.debug("dictation: transcript %r", transcript)
         if not transcript:
             self._flash("Didn't catch that")
             return
@@ -234,7 +235,8 @@ class Dictation:
                                        max_tokens=1024).strip()
             if cleaned:
                 text = cleaned
-            log.info("dictation: cleaned %r (%.0f ms)", text, (time.perf_counter() - t1) * 1000)
+            log.info("dictation: cleaned up %d chars in %.0f ms", len(text), (time.perf_counter() - t1) * 1000)
+            log.debug("dictation: cleaned %r", text)
 
         self._deliver(text, ctx, target_hwnd)
 
