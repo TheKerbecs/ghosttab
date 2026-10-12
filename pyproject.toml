@@ -1,0 +1,20 @@
+[project]
+name = "ghosttab"
+version = "0.1.0"
+description = "System-wide inline autocomplete for Windows, backed by a local llama.cpp server"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "uiautomation==2.0.20",
+    "requests>=2.31",
+]
+
+[project.scripts]
+ghosttab = "ghosttab.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["ghosttab"]

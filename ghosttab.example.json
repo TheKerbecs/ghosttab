@@ -1,0 +1,11 @@
+{
+  "server_url": "http://127.0.0.1:8089",
+  "debounce_ms": 400,
+  "max_tokens": 48,
+  "temperature": 0.1,
+  "suggestion_chaining": true,
+  "personalization": [
+    "I write in a direct, friendly tone and sign emails with my first name."
+  ],
+  "ignored_apps": ["KeePassXC.exe"]
+}

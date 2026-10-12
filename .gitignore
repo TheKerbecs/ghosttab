@@ -1,0 +1,7 @@
+.venv/
+vendor/
+__pycache__/
+*.egg-info/
+build/
+*.log
+ghosttab.json
