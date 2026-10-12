@@ -187,3 +187,84 @@ def advance_if_typed(typed: str, remaining: str) -> str | None:
 
 def ends_sentence(text: str) -> bool:
     return re.search(r"[.!?\u2026][\"')\]]*\s*$", text) is not None
+
+
+DICTATION_SYSTEM = (
+    "You turn raw speech transcripts into the text the speaker meant to write.\n"
+    "Rules:\n"
+    "1. MOST IMPORTANT: when the speaker corrects themselves (\"actually no\", \"I mean\", "
+    "\"nein, lieber\", \"ich meine\", \"oder besser\"), rewrite the sentence with only the "
+    "corrected value. The replaced value and the correction phrase must not appear in the output.\n"
+    "2. Remove filler words and false starts (um, uh, like, \u00e4hm, \u00e4h, m, also at the start).\n"
+    "3. Spoken punctuation becomes punctuation (comma, period, question mark, new line, "
+    "Komma, Punkt, Fragezeichen, neue Zeile).\n"
+    "4. Fix grammar, capitalisation and punctuation. Write numbers and times as digits.\n"
+    "5. Keep the speaker's language and tone. Do not answer, summarise or add anything.\n"
+    "Output only the cleaned text."
+)
+DICTATION_EXAMPLES = [
+    ("let's do the call at three, actually no, four pm works better",
+     "Let's do the call at 4 pm, that works better."),
+    ("k\u00f6nnen wir uns morgen um zehn treffen nein lieber um elf",
+     "K\u00f6nnen wir uns morgen um 11 treffen?"),
+    ("\u00e4hm ich schick dir das am montag nein ich mein am mittwoch punkt",
+     "Ich schick dir das am Mittwoch."),
+    ("i'll bring the slides comma the handouts and uh the laptop period",
+     "I'll bring the slides, the handouts and the laptop."),
+]
+
+
+def build_dictation_messages(transcript: str, vocabulary: list[str]) -> list[dict]:
+    system = DICTATION_SYSTEM
+    if vocabulary:
+        system += "\nSpell these names and terms exactly like this: " + ", ".join(vocabulary) + "."
+    messages = [{"role": "system", "content": system}]
+    for spoken, written in DICTATION_EXAMPLES:
+        messages += [{"role": "user", "content": spoken}, {"role": "assistant", "content": written}]
+    messages.append({"role": "user", "content": transcript})
+    return messages
+
+
+ASSISTANT_SYSTEM = (
+    "You are a writing assistant built into the user's computer. The user selected text in "
+    "{app} and asks you to do something with it. If the request changes the text (rewrite, "
+    "fix, shorten, change tone, translate), output only the resulting text, ready to replace "
+    "the selection: no preamble, no quotes, no explanation. If the request is a question about "
+    "the text, answer it briefly. Unless asked to translate, answer in the language of the "
+    "selected text."
+)
+ASSISTANT_SYSTEM_NO_SELECTION = (
+    "You are a writing assistant built into the user's computer, currently used in {app}. "
+    "Answer briefly. When asked to write something, output only that text, ready to paste."
+)
+
+
+@dataclass(frozen=True)
+class QuickAction:
+    label: str
+    instruction: str
+
+
+QUICK_ACTIONS = [
+    QuickAction("Improve", "Improve the writing: clearer and more natural, same meaning and language."),
+    QuickAction("Fix", "Fix spelling, grammar and punctuation. Change nothing else."),
+    QuickAction("Shorter", "Make it shorter and more concise, keeping the key information."),
+    QuickAction("Formal", "Rewrite it in a more formal, professional tone."),
+    QuickAction("Casual", "Rewrite it in a more casual, friendly tone."),
+    QuickAction("English", "Translate it into English."),
+    QuickAction("German", "Translate it into German."),
+    QuickAction("Explain", "Question about the text (do not rewrite it): what does it mean and what is "
+                "the writer asking for? Answer in two short sentences, in the language of the text."),
+    QuickAction("Summarize", "Summarize it in two or three sentences."),
+]
+
+
+def build_assistant_messages(selection: str, instruction: str, app: str) -> list[dict]:
+    app = app or "an app"
+    if selection.strip():
+        system = ASSISTANT_SYSTEM.format(app=app)
+        user = f"Selected text:\n<<<\n{selection}\n>>>\n\nRequest: {instruction}"
+    else:
+        system = ASSISTANT_SYSTEM_NO_SELECTION.format(app=app)
+        user = instruction
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]

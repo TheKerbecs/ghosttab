@@ -14,6 +14,7 @@ to start with it, letting the model pick a natural token such as " schedule".
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
@@ -42,13 +43,86 @@ class Cancelled(Exception):
     pass
 
 
+# Autocomplete keeps its own server slot so that dictation and assistant
+# requests do not evict its cached prompt (start the server with -np 2).
+COMPLETION_SLOT = 0
+TASK_SLOT = 1
+
+TRANSCRIBE_PROMPT = (
+    "Transcribe the following speech segment in its original language. Follow these specific "
+    "instructions for formatting the answer:\n"
+    "* Only output the transcription, with no newlines.\n"
+    "* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, "
+    "and write 3 instead of three."
+)
+
+
 class LlamaClient:
     def __init__(self, base_url: str, timeout_s: float):
         self.base_url = base_url.rstrip("/")
         self.timeout_s = timeout_s
         self.session = requests.Session()
+        self.task_session = requests.Session()
         self._templates: OrderedDict[str, str] = OrderedDict()
         self._lock = threading.Lock()
+
+    def chat(self, messages: list[dict], *, max_tokens: int = 512, temperature: float = 0.0,
+             timeout_s: float = 120.0) -> str:
+        body = {
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "id_slot": TASK_SLOT,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+        r = self.task_session.post(f"{self.base_url}/v1/chat/completions", json=body, timeout=timeout_s)
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"] or ""
+
+    def chat_stream(self, messages: list[dict], on_delta, *, max_tokens: int = 1024,
+                    temperature: float = 0.3, cancel: threading.Event | None = None) -> str:
+        """Stream a chat reply, calling on_delta(text) for every piece."""
+        body = {
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": True,
+            "id_slot": TASK_SLOT,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+        out: list[str] = []
+        with self.task_session.post(f"{self.base_url}/v1/chat/completions", json=body,
+                                    stream=True, timeout=self.timeout_s) as r:
+            r.raise_for_status()
+            for raw_line in r.iter_lines():
+                if cancel is not None and cancel.is_set():
+                    raise Cancelled
+                if not raw_line.startswith(b"data: "):
+                    continue
+                data = raw_line[6:]
+                if data.strip() == b"[DONE]":
+                    break
+                choices = json.loads(data.decode("utf-8")).get("choices") or []
+                delta = (choices[0].get("delta") or {}).get("content") if choices else None
+                if delta:
+                    out.append(delta)
+                    on_delta(delta)
+        return "".join(out)
+
+    def transcribe(self, wav: bytes, timeout_s: float = 120.0) -> str:
+        """Speech to text with the model's own audio encoder (needs --mmproj)."""
+        content = [
+            {"type": "input_audio", "input_audio": {"data": base64.b64encode(wav).decode("ascii"), "format": "wav"}},
+            {"type": "text", "text": TRANSCRIBE_PROMPT},
+        ]
+        return self.chat([{"role": "user", "content": content}], max_tokens=1024, timeout_s=timeout_s).strip()
+
+    def props(self) -> dict:
+        try:
+            r = self.session.get(f"{self.base_url}/props", timeout=5)
+            return r.json() if r.ok else {}
+        except (requests.RequestException, ValueError):
+            return {}
 
     def health(self) -> bool:
         try:
@@ -113,6 +187,7 @@ class LlamaClient:
             "top_p": 0.9,
             "stop": stop,
             "cache_prompt": True,
+            "id_slot": COMPLETION_SLOT,
             "stream": True,
         }
         if heal:

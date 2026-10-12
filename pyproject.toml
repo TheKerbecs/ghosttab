@@ -1,12 +1,14 @@
 [project]
 name = "ghosttab"
-version = "0.1.0"
-description = "System-wide inline autocomplete for Windows, backed by a local llama.cpp server"
+version = "0.2.0"
+description = "Inline autocomplete, dictation and a selection assistant for Windows on a local llama.cpp server"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "uiautomation==2.0.20",
     "requests>=2.31",
+    "sounddevice==0.5.2",
+    "numpy==2.2.6",
 ]
 
 [project.scripts]

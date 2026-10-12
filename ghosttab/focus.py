@@ -20,6 +20,7 @@ START, END = 0, 1          # TextPatternRangeEndpoint
 CHAR, LINE = 0, 3          # TextUnit_Character, TextUnit_Line
 PRE_CHARS = 2000
 POST_CHARS = 300
+SELECTION_CHARS = 8000
 EDITABLE_TYPES = {uia.ControlType.EditControl, uia.ControlType.DocumentControl,
                   uia.ControlType.ComboBoxControl, uia.ControlType.CustomControl,
                   uia.ControlType.GroupControl, uia.ControlType.PaneControl}
@@ -50,6 +51,10 @@ class FocusContext:
     field: Rect
     is_password: bool
     line_left: int = 0     # x where wrapped text lines start inside the field
+    editable: bool = True
+    selection: str = ""
+    selection_rect: Rect | None = None
+    hwnd: int = 0          # foreground window the element belongs to
 
 
 def _rects(raw_range) -> list[Rect]:
@@ -114,9 +119,19 @@ def read_control(ctrl: uia.Control, own_pid: int) -> FocusContext | None:
             top = ctrl.GetTopLevelControl()
             title = top.Name if top is not None else ""
             gui_tid = 0
+            fg_hwnd = 0
         app = win32.process_exe(pid)
 
-        preceding = trailing = ""
+        value_pattern = ctrl.GetPattern(uia.PatternId.ValuePattern)
+        # A web page's document has a TextPattern too; a read-only Value, or
+        # no Value on a non-focusable element, marks text that can't be typed into.
+        if value_pattern is not None:
+            editable = not value_pattern.IsReadOnly
+        else:
+            editable = ctrl.ControlType in EDITABLE_TYPES and bool(ctrl.IsKeyboardFocusable)
+
+        preceding = trailing = selection_text = ""
+        selection_rect = None
         caret: tuple[Rect, bool] | None = None
         line_left = field.x + 4
         text_pattern = ctrl.GetPattern(uia.PatternId.TextPattern)
@@ -133,6 +148,11 @@ def read_control(ctrl: uia.Control, own_pid: int) -> FocusContext | None:
             post.MoveEndpointByRange(START, sel, END)
             post.MoveEndpointByUnit(END, CHAR, POST_CHARS)
             trailing = post.GetText(-1) or ""
+            selection_text = sel.GetText(SELECTION_CHARS) or ""
+            if selection_text:
+                sel_rects = _rects(sel)
+                if sel_rects:
+                    selection_rect = sel_rects[0]
             caret = _caret_from_text(sel)
             line = sel.Clone()
             line.ExpandToEnclosingUnit(LINE)
@@ -140,7 +160,6 @@ def read_control(ctrl: uia.Control, own_pid: int) -> FocusContext | None:
             if line_rects:
                 line_left = line_rects[0].x
         else:
-            value_pattern = ctrl.GetPattern(uia.PatternId.ValuePattern)
             if value_pattern is None or ctrl.ControlType not in EDITABLE_TYPES:
                 log.debug("focused %s (%s) has no Text/Value pattern",
                           ctrl.ControlTypeName, win32.process_exe(pid))
@@ -162,7 +181,9 @@ def read_control(ctrl: uia.Control, own_pid: int) -> FocusContext | None:
             preceding=preceding.replace("\r\n", "\n").replace("\r", "\n"),
             trailing=trailing.replace("\r\n", "\n").replace("\r", "\n"),
             caret=caret[0], caret_exact=caret[1], field=field, is_password=is_password,
-            line_left=line_left,
+            line_left=line_left, editable=editable,
+            selection=selection_text.replace("\r\n", "\n").replace("\r", "\n"),
+            selection_rect=selection_rect, hwnd=fg_hwnd,
         )
     except Exception as exc:  # COM errors when the element disappears mid-read
         log.debug("read_focus failed: %r", exc)

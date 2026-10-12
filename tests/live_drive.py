@@ -1,7 +1,10 @@
 """Live end-to-end driver: types into a real window like a person and checks
 what ghosttab does.
 
-    python tests/live_drive.py --log ghosttab.log --target richedit|chromium|chat|german [--shots DIR]
+    python tests/live_drive.py --log ghosttab.log --target TARGET [--shots DIR]
+
+TARGET: richedit, chromium, chat, german, assistant, dictation (the last one
+needs ghosttab started with --config tests/live_dictation.json).
 
 ghosttab must already be running with --debug and its output in --log.
 Every keystroke is preceded by a check that the target window is still in
@@ -81,6 +84,21 @@ class Driver:
         if shift:
             evs.append(_key(VK_SHIFT, flags=win32.KEYEVENTF_KEYUP))
         _send(evs)
+
+    def combo(self, *vks, window: int | None = None):
+        """Press a key combination; `window` must be in the foreground."""
+        if user32.GetForegroundWindow() != (window or self.hwnd):
+            raise Abort("expected window lost the foreground; stopping before sending keys")
+        _send([_key(vk) for vk in vks] + [_key(vk, flags=win32.KEYEVENTF_KEYUP) for vk in reversed(vks)])
+
+    def click(self, x: int, y: int, double: bool = False):
+        self.ensure_foreground()
+        user32.SetCursorPos(x, y)
+        time.sleep(0.05)
+        for _ in range(2 if double else 1):
+            user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
+            user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
+            time.sleep(0.06)
 
     def new_log(self) -> str:
         with open(self.log_path, "r", encoding="utf-8", errors="replace") as f:
@@ -252,6 +270,93 @@ GERMAN = ("Hallo J\u00fcrgen, danke f\u00fcr die schnelle R\u00fcckmeldung. Ich 
           "angesehen und", " K\u00f6nnen wir")
 
 
+VK_CONTROL, VK_ALT, VK_RETURN, VK_SPACE = 0x11, 0x12, 0x0D, 0x20
+
+
+def run_assistant(d: Driver, tag: str):
+    """Selection assistant: hotkey, quick action, replace; then the selection dot."""
+    text = "i has went to the store yesterday and buyed three apple"
+    d.type(text, delay=0.02)
+    time.sleep(0.3)
+    d.press(VK_ESCAPE)
+    d.combo(VK_CONTROL, ord("A"))
+    time.sleep(0.2)
+    d.new_log()
+    d.combo(VK_CONTROL, VK_ALT, ord("A"))
+    opened = d.wait_log("assistant: opened", timeout=5)
+    d.check("hotkey opens the panel with the selection", bool(opened) and f"with {len(text)} chars" in opened,
+            opened.split("assistant: ")[-1] if opened else "not opened")
+    if not opened:
+        return
+    time.sleep(0.4)
+    panel = user32.GetForegroundWindow()
+    d.check("panel has keyboard focus", panel != d.hwnd, "")
+    print("   screenshot:", d.shot(f"{tag}-1-panel"))
+    d.combo(VK_CONTROL, ord("2"), window=panel)  # "Fix"
+    answer = d.wait_log("assistant: answer", timeout=20)
+    d.check("quick action streams an answer", bool(answer), answer.split("assistant: ")[-1] if answer else "")
+    time.sleep(0.3)
+    from PIL import ImageGrab
+    r = wintypes.RECT()
+    user32.GetWindowRect(panel, ctypes.byref(r))
+    ImageGrab.grab(bbox=(r.left, r.top, r.right, r.bottom), all_screens=True).save(d.shots / f"{tag}-2-answer.png")
+    print("   screenshot:", d.shots / f"{tag}-2-answer.png")
+    d.combo(VK_CONTROL, VK_RETURN, window=panel)
+    inserted = d.wait_log("assistant: inserted", timeout=5)
+    time.sleep(0.4)
+    final = d.field_text()
+    d.check("Ctrl+Enter replaces the selection", bool(inserted) and "buyed" not in final and "bought" in final,
+            repr(final))
+
+    # Mouse selection: double-click a word, click the dot, the panel opens.
+    doc = uia.GetFocusedControl().GetPattern(uia.PatternId.TextPattern)
+    rng = doc.DocumentRange.FindText("store", False, False) if doc else None
+    rects = rng.GetBoundingRectangles() if rng else []
+    if not rects:
+        d.check("found a word to double-click", False, "")
+        return
+    rc = rects[0]
+    x, y = rc.left + rc.width() // 2, rc.top + rc.height() // 2
+    d.new_log()
+    d.click(x, y, double=True)
+    dot = d.wait_log("assistant: selection dot", timeout=3)
+    d.check("double-click selection shows the dot", bool(dot), dot.split("assistant: ")[-1] if dot else "")
+    if not dot:
+        return
+    time.sleep(0.2)
+    print("   screenshot:", d.shot(f"{tag}-3-dot"))
+    user32.SetCursorPos(x + 12 + 8, y + 10 + 8)
+    time.sleep(0.05)
+    user32.mouse_event(0x0002, 0, 0, 0, 0)
+    user32.mouse_event(0x0004, 0, 0, 0, 0)
+    opened = d.wait_log("assistant: opened", timeout=5)
+    d.check("clicking the dot opens the panel", bool(opened) and "with 5 chars" in opened,
+            opened.split("assistant: ")[-1] if opened else "")
+    time.sleep(0.4)
+    d.combo(VK_ESCAPE, window=user32.GetForegroundWindow())
+    time.sleep(0.4)
+    d.check("Esc closes the panel and returns focus", user32.GetForegroundWindow() == d.hwnd, "")
+
+
+def run_dictation(d: Driver, tag: str):
+    """Needs ghosttab started with tests/live_dictation.json (audio from a file)."""
+    d.type("Notiz:", delay=0.03)
+    time.sleep(0.2)
+    d.press(VK_ESCAPE)
+    d.new_log()
+    d.combo(VK_CONTROL, VK_ALT, VK_SPACE)
+    started = d.wait_log("dictation: recording", timeout=5)
+    d.check("hotkey starts dictation", bool(started), "")
+    time.sleep(0.5)
+    print("   screenshot:", d.shot(f"{tag}-1-listening"))
+    cleaned = d.wait_log("dictation: cleaned", timeout=30)
+    d.check("speech is transcribed and cleaned up", bool(cleaned), cleaned.split("dictation: ")[-1] if cleaned else "")
+    time.sleep(0.6)
+    final = d.field_text()
+    d.check("text is typed at the cursor", final.startswith("Notiz: ") and "9 Uhr" in final and "Vertrag" in final,
+            repr(final))
+
+
 def run(d: Driver, tag: str, texts=ENGLISH):
     draft, follow_up = texts
     d.type(draft)
@@ -315,7 +420,7 @@ def run(d: Driver, tag: str, texts=ENGLISH):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--log", type=Path, required=True)
-    ap.add_argument("--target", choices=["richedit", "chromium", "chat", "german"], default="richedit")
+    ap.add_argument("--target", choices=["richedit", "chromium", "chat", "german", "assistant", "dictation"], default="richedit")
     ap.add_argument("--shots", type=Path, default=Path(tempfile.gettempdir()))
     args = ap.parse_args()
     win32.enable_dpi_awareness()
@@ -325,7 +430,7 @@ def main():
         print(f"someone is using this PC (last input {idle:.1f}s ago); not taking focus. Rerun when idle.")
         return 4
     profile = None
-    if args.target == "richedit":
+    if args.target in ("richedit", "assistant", "dictation"):
         proc, hwnd = open_richedit()
     else:
         proc, hwnd, profile = open_chromium(CHAT_PAGE, "1100,560") if args.target == "chat" else open_chromium()
@@ -340,6 +445,10 @@ def main():
                     run_chat(d, args.target)
                 elif args.target == "german":
                     run(d, args.target, GERMAN)
+                elif args.target == "assistant":
+                    run_assistant(d, args.target)
+                elif args.target == "dictation":
+                    run_dictation(d, args.target)
                 else:
                     run(d, args.target)
             except Abort as e:

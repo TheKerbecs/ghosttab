@@ -40,6 +40,19 @@ class Config:
     screen_context: bool = True
     screen_context_budget: int = 2400
     screen_context_ttl_s: float = 4.0
+    autocomplete: bool = True
+    # Dictation: speak, and the cleaned-up text is typed at the cursor.
+    dictation: bool = True
+    dictation_hotkey: str = "ctrl+alt+space"
+    dictation_cleanup: bool = True
+    dictation_vocabulary: list[str] = field(default_factory=list)
+    dictation_silence_ms: int = 1500  # stop after this long without speech; 0 = only by hotkey
+    dictation_max_s: int = 120
+    dictation_input_file: str = ""  # testing: a WAV file used instead of the microphone
+    # Selection assistant.
+    assistant: bool = True
+    assistant_hotkey: str = "ctrl+alt+a"
+    assistant_selection_dot: bool = True
     suggestion_chaining: bool = True
     swallow_tab_while_generating: bool = True
     personalization: list[str] = field(default_factory=list)

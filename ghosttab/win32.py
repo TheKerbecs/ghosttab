@@ -1,11 +1,12 @@
-"""ctypes bindings: a low-level keyboard hook that can swallow keys, Unicode
-text injection, and process and window lookups."""
+"""ctypes bindings: low-level keyboard and mouse hooks, Unicode text
+injection, the clipboard, and process and window lookups."""
 
 from __future__ import annotations
 
 import ctypes
 import logging
 import threading
+import time
 from ctypes import wintypes
 from typing import Callable
 
@@ -119,7 +120,6 @@ class KeyboardHook:
             user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
 
 
-
 INPUT_KEYBOARD = 1
 KEYEVENTF_KEYUP = 0x2
 KEYEVENTF_UNICODE = 0x4
@@ -148,34 +148,45 @@ user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
 user32.SendInput.restype = wintypes.UINT
 
 
+def _key_event(vk: int = 0, scan: int = 0, flags: int = 0) -> INPUT:
+    ev = INPUT(type=INPUT_KEYBOARD)
+    ev.u.ki = KEYBDINPUT(wVk=vk, wScan=scan, dwFlags=flags, time=0, dwExtraInfo=INJECT_MARK)
+    return ev
+
+
 def send_text(text: str) -> bool:
-    """Type `text` into whatever has keyboard focus (KEYEVENTF_UNICODE)."""
-    units = text.encode("utf-16-le")
-    codes = [int.from_bytes(units[i:i + 2], "little") for i in range(0, len(units), 2)]
+    """Type `text` into whatever has keyboard focus (KEYEVENTF_UNICODE).
+
+    Line breaks are sent as Shift+Enter, which starts a new line in editors
+    and in chat inputs alike, where a plain Enter would send the message."""
     events = []
-    for code in codes:
-        for flags in (KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP):
-            ev = INPUT(type=INPUT_KEYBOARD)
-            ev.u.ki = KEYBDINPUT(wVk=0, wScan=code, dwFlags=flags, time=0, dwExtraInfo=INJECT_MARK)
-            events.append(ev)
-    return _send(events)
+    for ch in text.replace("\r\n", "\n").replace("\r", "\n"):
+        if ch == "\n":
+            events += [_key_event(VK_SHIFT), _key_event(VK_RETURN),
+                       _key_event(VK_RETURN, flags=KEYEVENTF_KEYUP), _key_event(VK_SHIFT, flags=KEYEVENTF_KEYUP)]
+            continue
+        units = ch.encode("utf-16-le")
+        for i in range(0, len(units), 2):
+            code = int.from_bytes(units[i:i + 2], "little")
+            events += [_key_event(scan=code, flags=KEYEVENTF_UNICODE),
+                       _key_event(scan=code, flags=KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)]
+    return _send(events) if events else True
 
 
 def send_key(vk: int) -> bool:
     """Press and release a virtual key (modifiers currently held still apply)."""
-    events = []
-    for flags in (0, KEYEVENTF_KEYUP):
-        ev = INPUT(type=INPUT_KEYBOARD)
-        ev.u.ki = KEYBDINPUT(wVk=vk, wScan=0, dwFlags=flags, time=0, dwExtraInfo=INJECT_MARK)
-        events.append(ev)
-    return _send(events)
+    return _send([_key_event(vk), _key_event(vk, flags=KEYEVENTF_KEYUP)])
+
+
+def send_combo(*vks: int) -> bool:
+    """Press keys in order and release them in reverse, e.g. send_combo(VK_CONTROL, ord("C"))."""
+    return _send([_key_event(vk) for vk in vks] + [_key_event(vk, flags=KEYEVENTF_KEYUP) for vk in reversed(vks)])
 
 
 def _send(events: list[INPUT]) -> bool:
     arr = (INPUT * len(events))(*events)
     sent = user32.SendInput(len(events), arr, ctypes.sizeof(INPUT))
     return sent == len(events)
-
 
 
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -263,3 +274,155 @@ def enable_dpi_awareness():
         ctypes.windll.shcore.SetProcessDpiAwareness(2)
     except OSError:
         user32.SetProcessDPIAware()
+
+
+user32.WindowFromPoint.argtypes = [wintypes.POINT]
+user32.WindowFromPoint.restype = wintypes.HWND
+
+
+def window_from_point(x: int, y: int) -> int:
+    return user32.WindowFromPoint(wintypes.POINT(x, y)) or 0
+
+
+def cursor_pos() -> tuple[int, int]:
+    pt = wintypes.POINT()
+    user32.GetCursorPos(ctypes.byref(pt))
+    return pt.x, pt.y
+
+
+user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+user32.BringWindowToTop.argtypes = [wintypes.HWND]
+
+
+def force_foreground(hwnd: int) -> bool:
+    """Bring `hwnd` to the foreground even when another process owns it."""
+    fg = user32.GetForegroundWindow()
+    if fg == hwnd:
+        return True
+    fg_tid = user32.GetWindowThreadProcessId(fg, None)
+    me = kernel32.GetCurrentThreadId()
+    attached = bool(fg_tid) and fg_tid != me and user32.AttachThreadInput(me, fg_tid, True)
+    try:
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(me, fg_tid, False)
+    return user32.GetForegroundWindow() == hwnd
+
+
+CF_UNICODETEXT = 13
+GMEM_MOVEABLE = 0x2
+user32.OpenClipboard.argtypes = [wintypes.HWND]
+user32.GetClipboardData.argtypes = [wintypes.UINT]
+user32.GetClipboardData.restype = wintypes.HANDLE
+user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+user32.SetClipboardData.restype = wintypes.HANDLE
+user32.GetClipboardSequenceNumber.restype = wintypes.DWORD
+kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+kernel32.GlobalLock.restype = wintypes.LPVOID
+kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+
+
+def _open_clipboard() -> bool:
+    for _ in range(10):  # another process may hold it briefly
+        if user32.OpenClipboard(None):
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def get_clipboard_text() -> str | None:
+    if not _open_clipboard():
+        return None
+    try:
+        handle = user32.GetClipboardData(CF_UNICODETEXT)
+        if not handle:
+            return None
+        ptr = kernel32.GlobalLock(handle)
+        try:
+            return ctypes.wstring_at(ptr)
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
+
+
+def set_clipboard_text(text: str) -> bool:
+    data = ctypes.create_unicode_buffer(text)
+    size = ctypes.sizeof(data)
+    handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, size)
+    if not handle:
+        return False
+    ptr = kernel32.GlobalLock(handle)
+    ctypes.memmove(ptr, data, size)
+    kernel32.GlobalUnlock(handle)
+    if not _open_clipboard():
+        return False
+    try:
+        user32.EmptyClipboard()
+        return bool(user32.SetClipboardData(CF_UNICODETEXT, handle))
+    finally:
+        user32.CloseClipboard()
+
+
+def clipboard_sequence() -> int:
+    return user32.GetClipboardSequenceNumber()
+
+
+WH_MOUSE_LL = 14
+WM_LBUTTONDOWN, WM_LBUTTONUP, WM_RBUTTONDOWN, WM_MBUTTONDOWN = 0x201, 0x202, 0x204, 0x207
+
+
+class MSLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [
+        ("pt", wintypes.POINT),
+        ("mouseData", wintypes.DWORD),
+        ("flags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ULONG_PTR),
+    ]
+
+
+class MouseHook:
+    """WH_MOUSE_LL hook reporting button events as on_event(message, x, y).
+    It never swallows input, and the callback must return quickly."""
+
+    def __init__(self, on_event: Callable[[int, int, int], None]):
+        self.on_event = on_event
+        self._thread_id = 0
+        self._hook = None
+        self._proc = HOOKPROC(self._callback)
+        self._ready = threading.Event()
+
+    def _callback(self, n_code, w_param, l_param):
+        if n_code == 0 and w_param in (WM_LBUTTONDOWN, WM_LBUTTONUP, WM_RBUTTONDOWN, WM_MBUTTONDOWN):
+            info = ctypes.cast(l_param, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
+            try:
+                self.on_event(w_param, info.pt.x, info.pt.y)
+            except Exception:
+                log.exception("mouse handler failed")
+        return user32.CallNextHookEx(None, n_code, w_param, l_param)
+
+    def _run(self):
+        self._thread_id = kernel32.GetCurrentThreadId()
+        self._hook = user32.SetWindowsHookExW(WH_MOUSE_LL, self._proc, kernel32.GetModuleHandleW(None), 0)
+        if not self._hook:
+            log.error("SetWindowsHookExW(WH_MOUSE_LL) failed: %s", ctypes.get_last_error())
+        self._ready.set()
+        msg = wintypes.MSG()
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            pass
+        if self._hook:
+            user32.UnhookWindowsHookEx(self._hook)
+
+    def start(self):
+        threading.Thread(target=self._run, name="mousehook", daemon=True).start()
+        self._ready.wait(5)
+
+    def stop(self):
+        if self._thread_id:
+            user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)

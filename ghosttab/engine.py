@@ -178,7 +178,7 @@ class Engine:
                 self.cancel_and_hide(kind)
 
     def eligible(self, ctx: FocusContext) -> bool:
-        if ctx.is_password:
+        if ctx.is_password or not ctx.editable:
             return False
         app = ctx.app.lower()
         if app in self.blocked:
@@ -205,7 +205,8 @@ class Engine:
             self._set_state("idle")
             return
         if not self.eligible(ctx):
-            log.debug("skip: field not eligible (app=%s password=%s)", ctx.app, ctx.is_password)
+            log.debug("skip: field not eligible (app=%s password=%s editable=%s)",
+                      ctx.app, ctx.is_password, ctx.editable)
             self._set_state("idle")
             return
         stripped = ctx.preceding.strip()
